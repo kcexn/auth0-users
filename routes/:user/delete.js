@@ -31,6 +31,7 @@ const schema = {
 };
 module.exports = async (app) => {
   app.delete('/:user', { schema }, async (request, reply) => {
+    app.log.info(request.headers);
     try {
       const { user } = request.params;
 
