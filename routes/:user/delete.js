@@ -1,4 +1,4 @@
-const { getToken, deleteUser } = require('../../lib/auth0/client');
+const { deleteUser } = require('../../lib/auth0/client');
 const { decodeJwt } = require('jose');
 
 const schema = {
@@ -54,22 +54,17 @@ module.exports = async (app) => {
         return reply.code(403).send();
       }
 
-      const token = await getToken();
-      if (token.error) {
-        return reply.code(token.statusCode).send();
-      }
-      const access_token = token.access_token;
-      const response = await deleteUser(user, access_token);
+      const response = await deleteUser(user);
       if (!response.ok) {
         app.log.error({
           error: 'Error deleting user',
-          statusCode: response.statusCode,
-          statusMessage: response.statusText
+          status: response.status,
+          statusText: response.statusText
         });
         return reply.code(response.statusCode).send();
       }
       return reply.code(204).send();
-    } catch (error) {
+    } catch {
       return reply.code(500).send();
     }
   });
