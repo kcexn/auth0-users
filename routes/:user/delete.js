@@ -1,6 +1,6 @@
-const { getToken, expireToken } = require('../../lib/auth0/client');
+const { getToken, deleteUser } = require('../../lib/auth0/client');
+const { decodeJwt } = require('jose');
 
-const audience = process.env.AUTH0_AUDIENCE;
 const schema = {
   description: 'Delete a user from Auth0',
   tags: ['users'],
@@ -21,47 +21,56 @@ const schema = {
     401: {
       description: 'Unauthorized - Invalid authentication credentials'
     },
+    403: {
+      description: 'Forbidden - Cannot delete another user'
+    },
     500: {
       description: 'Internal server error'
     }
   }
 };
-async function deleteUser(user_id, access_token) {
-  const base = audience.replace(/\/$/, '');
-  return await fetch(`${base}/users/${user_id}`, {
-    method: 'DELETE',
-    headers: {
-      'Authorization': `Bearer ${access_token}`,
-      'Content-Type': 'application/json'
-    }
-  });
-}
 module.exports = async (app) => {
   app.delete('/:user', { schema }, async (request, reply) => {
     try {
       const { user } = request.params;
+
+      const authHeader = request.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        app.log.error({ error: 'Unauthorized - Invalid authentication credentials' });
+        return reply.code(401).send();
+      }
+
+      const userJwt = authHeader.substring(7);
+      let decodedUserToken;
+      try {
+        decodedUserToken = decodeJwt(userJwt);
+      } catch (error) {
+        app.log.error({ error });
+        return reply.code(401).send();
+      }
+
+      if (decodedUserToken.sub !== user) {
+        app.log.error({ error: 'Forbidden - Cannot delete another user' });
+        return reply.code(403).send();
+      }
+
       const token = await getToken();
       if (token.error) {
-        if (token.error === 'access_denied') {
-          reply.code(401);
-        }
-        return reply.send({ ...token });
+        return reply.code(token.statusCode).send();
       }
       const access_token = token.access_token;
       const response = await deleteUser(user, access_token);
       if (!response.ok) {
-        app.log.error({ error: 'Error deleting user', message: response.statusText });
-        if (response.statusCode === 401) {
-          await expireToken();
-        }
+        app.log.error({
+          error: 'Error deleting user',
+          statusCode: response.statusCode,
+          statusMessage: response.statusText
+        });
         return reply.code(response.statusCode).send();
       }
       return reply.code(204).send();
     } catch (error) {
-      return reply.code(500).send({
-        success: false,
-        error: error.message
-      });
+      return reply.code(500).send();
     }
   });
 };
